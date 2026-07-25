@@ -12,7 +12,7 @@ import { Chat, Filters } from "@/app/context/chats-provider";
 import Profile from "../profile";
 import { useContacts } from "@/app/hooks/use-contacts";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
-import { formatTime, getDisplayNameFromJid } from "@/app/utils";
+import { formatTime, getDisplayNameFromJid, isPhonePlaceholder } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
 import { useProfile } from "@/app/hooks/use-profile";
 import { memo } from "react";
@@ -161,15 +161,27 @@ const ChatList = memo(function ChatList({
     if (normalizedSearch && !name.toLowerCase().includes(normalizedSearch)) return [];
 
     const lastMessage = chat.messages[chat.messages.length - 1];
+    const sender = lastMessage && chat.group
+      ? chat.participants?.find(({ id }) => id === lastMessage.contactId)
+      : undefined;
+    const senderContact = lastMessage && chat.group
+      ? (sender?.phone ? getContact(sender.phone) : undefined) ?? getContact(lastMessage.contactId)
+      : undefined;
+    const senderDisplayName = sender?.name && !isPhonePlaceholder(sender.name) ? sender.name : undefined;
+    const contactDisplayName = senderContact?.displayName && !isPhonePlaceholder(senderContact.displayName)
+      ? senderContact.displayName
+      : undefined;
+    const senderName = lastMessage && chat.group
+      ? (senderContact?.isSaved ? senderContact.displayName : undefined) || senderDisplayName ||
+        contactDisplayName || (sender?.phone ? `+${sender.phone}` : getDisplayNameFromJid(lastMessage.contactId))
+      : undefined;
     return [
       <ChatRow
         key={chat.id}
         chat={chat}
         name={name}
         avatar={contact?.contactAvatar}
-        senderName={lastMessage && chat.group
-          ? getContact(lastMessage.contactId)?.displayName ?? getDisplayNameFromJid(lastMessage.contactId)
-          : undefined}
+        senderName={senderName}
         isCurrent={chat.id === currentChatId}
         typingMatchesLastSender={Boolean(lastMessage && typingContactId === lastMessage.contactId)}
         blueTickEnabled={blueTickEnabled}
