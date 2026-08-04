@@ -11,7 +11,6 @@ type User struct {
 	PhoneNumber string `json:"phoneNumber"`
 	PhoneJID    string `json:"phoneJid,omitempty"`
 	LIDJID      string `json:"lidJid,omitempty"`
-	Phone       string `json:"phone,omitempty"`
 	IsSaved     bool   `json:"isSaved,omitempty"`
 }
 
@@ -37,6 +36,10 @@ type MessagePage struct {
 	NextCursor   *string   `json:"nextCursor"`
 	LatestCursor *string   `json:"latestCursor"`
 	HasMore      bool      `json:"hasMore"`
+	OlderCursor  *string   `json:"olderCursor"`
+	NewerCursor  *string   `json:"newerCursor"`
+	HasOlder     bool      `json:"hasOlder"`
+	HasNewer     bool      `json:"hasNewer"`
 }
 
 type Chat struct {

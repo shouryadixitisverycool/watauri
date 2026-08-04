@@ -354,8 +354,8 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 	if evt.Info.IsFromMe {
 		status = "sent"
 	}
-	log.Printf("[wa] Event: message id = %s chat = %s sender = %s text = %q media = %s isFromMe = %v ",
-		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, text, mediaType, evt.Info.IsFromMe)
+	log.Printf("[wa] Event: message id = %s chat = %s sender = %s sender_push = %s text = %q media = %s isFromMe = %v ",
+		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, evt.Info.PushName, text, mediaType, evt.Info.IsFromMe)
 
 	chatJID := evt.Info.Chat.String()
 	if evt.Info.Chat.Server != types.GroupServer {
@@ -366,7 +366,14 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		}
 		chatJID = canonicalChatJID
 	}
-
+	if source == "history" && evt.Info.PushName != "" && evt.Info.Sender.User != "" && evt.Info.Sender.Server != "" {
+		if err := wa.store.UpsertContact(User{
+			ID:       evt.Info.Sender.String(),
+			PushName: evt.Info.PushName,
+		}); err != nil {
+			log.Printf("[wa] failed to upsert history message pushname %s: %v", evt.Info.Sender, err)
+		}
+	}
 	ourMsg := Message{
 		ID:        evt.Info.ID,
 		ChatJID:   chatJID,
@@ -647,13 +654,13 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 	return message, nil
 }
 
-func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bool) error {
+func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bool, messageIDs []string) (int, error) {
 	chatJID, err := types.ParseJID(chatID)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errInvalidChatID, err)
+		return 0, fmt.Errorf("%w: %v", errInvalidChatID, err)
 	}
 	if chatJID.User == "" || chatJID.Server == "" {
-		return errInvalidChatID
+		return 0, errInvalidChatID
 	}
 
 	wa.mu.RLock()
@@ -662,37 +669,40 @@ func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bo
 	wa.mu.RUnlock()
 
 	if store == nil {
-		return errPersistMessage
+		return 0, errPersistMessage
 	}
 	if sendReceipt && client == nil {
-		return errWAUnavailable
+		return 0, errWAUnavailable
 	}
-	messages, err := store.GetUnreadInboundMessages(chatJID.String())
+	messages, err := store.GetUnreadInboundMessages(chatJID.String(), messageIDs)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errPersistMessage, err)
+		return 0, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
 
-	if sendReceipt && len(messages) > 0 {
-		bySender := map[string][]types.MessageID{}
-		for _, message := range messages {
-			bySender[message.SenderID] = append(bySender[message.SenderID], types.MessageID(message.ID))
+	filteredIDs := make([]string, 0, len(messages))
+	bySender := map[string][]types.MessageID{}
+	for _, message := range messages {
+		filteredIDs = append(filteredIDs, message.ID)
+		bySender[message.SenderID] = append(bySender[message.SenderID], types.MessageID(message.ID))
 
-		}
+	}
+	if sendReceipt && len(messages) > 0 {
 		now := time.Now()
 		for senderID, ids := range bySender {
 			senderJID, err := types.ParseJID(senderID)
 			if err != nil {
-				return fmt.Errorf("%w: invalid sender jid %q: %v", errInvalidChatID, senderID, err)
+				return 0, fmt.Errorf("%w: invalid sender jid %q: %v", errInvalidChatID, senderID, err)
 			}
 			if err := client.MarkRead(ctx, ids, now, chatJID, senderJID); err != nil {
-				return err
+				return 0, err
 			}
 		}
 	}
-	if err := store.MarkChatRead(chatJID.String()); err != nil {
-		return fmt.Errorf("%w: %v", errPersistMessage, err)
+	unreadCount, err := store.MarkChatRead(chatJID.String(), filteredIDs)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
-	return nil
+	return unreadCount, nil
 }
 
 func (wa *WAManager) Disconnect() { wa.client.Disconnect() }
