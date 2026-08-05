@@ -129,7 +129,9 @@ const MessageList = memo(function MessageList({
   isLoading,
   error,
   hasMoreMessages,
+  hasNewerMessages,
   loadOlderMessages,
+  loadNewerMessages,
   unreadCount,
   scrollToBottomRequest,
 }: {
@@ -141,7 +143,9 @@ const MessageList = memo(function MessageList({
   isLoading: boolean;
   error: string | null;
   hasMoreMessages: boolean;
+  hasNewerMessages: boolean;
   loadOlderMessages: () => Promise<void>;
+  loadNewerMessages: () => Promise<void>;
   unreadCount: number;
   scrollToBottomRequest: number;
 }) {
@@ -158,9 +162,7 @@ const MessageList = memo(function MessageList({
   const positionedAtUnread = useRef(false);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   let firstItemIndex = committedFirstItemIndex.current;
-  const oldestUnreadIndex = unreadCount <= messages.length || !hasMoreMessages
-    ? Math.max(0, messages.length - unreadCount)
-    : -1;
+  const oldestUnreadIndex = messages.findIndex((message) => !message.isSentFromUser && !message.read);
 
   if (previousMessages.current !== messages && previousMessages.current[0]) {
     const previousFirstIndex = messages.findIndex(
@@ -182,17 +184,12 @@ const MessageList = memo(function MessageList({
 
   useLayoutEffect(() => {
     if (positionedAtUnread.current || unreadCount === 0 || messages.length === 0 || isLoading) return;
-    if (unreadCount > messages.length && hasMoreMessages) {
-      void loadOlderMessages();
-      return;
-    }
-
     positionedAtUnread.current = true;
     virtuosoRef.current?.scrollToIndex({
-      index: firstItemIndex + Math.max(0, messages.length - unreadCount),
+      index: firstItemIndex + Math.max(0, oldestUnreadIndex),
       align: "center",
     });
-  }, [firstItemIndex, hasMoreMessages, isLoading, loadOlderMessages, messages.length, unreadCount]);
+  }, [firstItemIndex, isLoading, messages.length, oldestUnreadIndex, unreadCount]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);
@@ -237,6 +234,9 @@ const MessageList = memo(function MessageList({
         }}
         startReached={() => {
           if (hasMoreMessages && !isLoading) void loadOlderMessages();
+        }}
+        endReached={() => {
+          if (hasNewerMessages && !isLoading) void loadNewerMessages();
         }}
         itemContent={(_index, message) => {
           const index = messageIndexes.get(message.id)!;
@@ -601,9 +601,11 @@ export default function CurrentChat() {
     isLoading,
     error,
     hasMoreMessages,
+    hasNewerMessages,
     unreadCount,
     sendMessage,
     loadOlderMessages,
+    loadNewerMessages,
   } = useCurrentChat();
   const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
@@ -634,7 +636,9 @@ export default function CurrentChat() {
             isLoading={isLoading}
             error={error}
             hasMoreMessages={hasMoreMessages}
+            hasNewerMessages={hasNewerMessages}
             loadOlderMessages={loadOlderMessages}
+            loadNewerMessages={loadNewerMessages}
             unreadCount={unreadCount}
             scrollToBottomRequest={scrollToBottomRequest}
           />

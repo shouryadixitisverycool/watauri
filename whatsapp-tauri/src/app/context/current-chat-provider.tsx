@@ -12,9 +12,8 @@ import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
 import { getDisplayNameFromJid, isPhonePlaceholder, normalizeJid } from "../utils";
-import { BackendMessage, listBackendMessages, markBackendChatRead, sendBackendMessage } from "../backend";
+import { BackendMessage, listBackendMessages, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
-import { useProfile } from "../hooks/use-profile";
 
 export type CurrentChatContacts = {
   [contactId: string]: Contact | undefined;
@@ -36,12 +35,14 @@ export type CurrentChatData = {
   isLoading: boolean;
   error: string | null;
   hasMoreMessages: boolean;
+  hasNewerMessages: boolean;
 };
 
 export type CurrentChat = CurrentChatData & {
   loadCurrentChat: (chat: Partial<CurrentChatData>) => void;
   sendMessage: (text: string) => boolean;
   loadOlderMessages: () => Promise<void>;
+  loadNewerMessages: () => Promise<void>;
 };
 
 export const CurrentChatContext = createContext<undefined | CurrentChat>(
@@ -102,9 +103,11 @@ export function mergeMessages(previous: Message[], incoming: Message[], prepend 
 
 type CachedMessages = {
   messages: Message[];
-  nextCursor: string | null;
+  olderCursor: string | null;
+  newerCursor: string | null;
   latestCursor: string | null;
-  hasMore: boolean;
+  hasOlder: boolean;
+  hasNewer: boolean;
   initialized: boolean;
 };
 
@@ -131,28 +134,31 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     isLoading: false,
     error: null,
     hasMoreMessages: false,
+    hasNewerMessages: false,
   });
   const {
     chats: { complete },
   } = useChats();
   const { contacts, getContact } = useContacts();
-  const { profile: { readReceiptsEnabled } } = useProfile();
   const pollingActive = useChatPollingActive();
   const cacheRef = useRef(new Map<string, CachedMessages>());
   const requestRef = useRef<ActiveRequest | null>(null);
   const olderRequestRef = useRef<{ chatId: string; promise: Promise<void> } | null>(null);
+  const newerRequestRef = useRef<{ chatId: string; promise: Promise<void> } | null>(null);
   const chatsRef = useRef(complete);
   const currentChatRef = useRef(currentChat);
   chatsRef.current = complete;
   currentChatRef.current = currentChat;
 
-  const requestPage = useCallback(async (chatId: string, direction: "initial" | "newer" | "older") => {
+  const requestPage = useCallback(async (chatId: string, direction: "initial" | "poll" | "newer" | "older") => {
     while (requestRef.current) {
-      if (direction === "newer") return;
+      if (direction === "poll") return;
       await requestRef.current.done;
     }
     const cached = cacheRef.current.get(chatId);
-    if (direction === "older" && (!cached?.hasMore || !cached.nextCursor)) return;
+    if (direction === "older" && (!cached?.hasOlder || !cached.olderCursor)) return;
+    if (direction === "newer" && (!cached?.hasNewer || !cached.newerCursor)) return;
+    if (direction === "poll" && cached?.hasNewer) return;
 
     const controller = new AbortController();
     let finishRequest!: () => void;
@@ -165,8 +171,13 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     try {
       const page = await listBackendMessages(chatId, {
         limit: 100,
-        before: direction === "older" ? cached?.nextCursor ?? undefined : undefined,
-        after: direction === "newer" ? cached?.latestCursor ?? undefined : undefined,
+        before: direction === "older" ? cached?.olderCursor ?? undefined : undefined,
+        after: direction === "newer"
+          ? cached?.newerCursor ?? undefined
+          : direction === "poll" ? cached?.latestCursor ?? undefined : undefined,
+        anchor: direction === "initial" && currentChatRef.current.unreadCount > 0
+          ? "oldestUnread"
+          : undefined,
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
@@ -178,39 +189,51 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       const candidate: CachedMessages = direction === "initial" || !current
         ? {
             messages: mergeMessages(incoming, current?.messages ?? []),
-            nextCursor: page.nextCursor,
+            olderCursor: page.olderCursor,
+            newerCursor: page.newerCursor,
             latestCursor: page.latestCursor,
-            hasMore: page.hasMore,
+            hasOlder: page.hasOlder,
+            hasNewer: page.hasNewer,
             initialized: true,
           }
         : direction === "older"
           ? {
               ...current,
               messages: mergeMessages(current.messages, incoming, true),
-              nextCursor: page.nextCursor,
-              hasMore: page.hasMore,
+              olderCursor: page.olderCursor,
+              hasOlder: page.hasOlder,
             }
-          : {
+          : direction === "newer" ? {
+              ...current,
+              messages: mergeMessages(current.messages, incoming),
+              latestCursor: page.latestCursor ?? current.latestCursor,
+              newerCursor: page.newerCursor,
+              hasNewer: page.hasNewer,
+            } : {
               ...current,
               messages: mergeMessages(current.messages, incoming),
               latestCursor: page.latestCursor ?? current.latestCursor,
             };
       const next = current && candidate.messages === current.messages &&
-        candidate.nextCursor === current.nextCursor &&
+        candidate.olderCursor === current.olderCursor &&
+        candidate.newerCursor === current.newerCursor &&
         candidate.latestCursor === current.latestCursor &&
-        candidate.hasMore === current.hasMore &&
+        candidate.hasOlder === current.hasOlder &&
+        candidate.hasNewer === current.hasNewer &&
         candidate.initialized === current.initialized
         ? current
         : candidate;
       cacheRef.current.set(chatId, next);
       setCurrentChat((prev) => {
         if (prev.chatId !== chatId) return prev;
-        if (prev.messages === next.messages && prev.hasMoreMessages === next.hasMore &&
+        if (prev.messages === next.messages && prev.hasMoreMessages === next.hasOlder &&
+          prev.hasNewerMessages === next.hasNewer &&
           !prev.isLoading && prev.error === null) return prev;
         return {
           ...prev,
           messages: next.messages,
-          hasMoreMessages: next.hasMore,
+          hasMoreMessages: next.hasOlder,
+          hasNewerMessages: next.hasNewer,
           isLoading: false,
           error: null,
         };
@@ -234,8 +257,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     const chatId = currentChat.chatId;
     if (!chatId || !pollingActive) return;
 
-    void requestPage(chatId, cacheRef.current.get(chatId)?.initialized ? "newer" : "initial");
-    const interval = setInterval(() => void requestPage(chatId, "newer"), 3000);
+    void requestPage(chatId, cacheRef.current.get(chatId)?.initialized ? "poll" : "initial");
+    const interval = setInterval(() => void requestPage(chatId, "poll"), 3000);
     return () => {
       clearInterval(interval);
       if (requestRef.current?.chatId === chatId) {
@@ -300,6 +323,9 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, [complete, contacts, currentChat.chatId, getContact]);
 
   const loadCurrentChat = useCallback((chat: Partial<CurrentChatData>) => {
+    if (chat.chatId && chat.chatId !== currentChatRef.current.chatId && chat.unreadCount) {
+      cacheRef.current.delete(chat.chatId);
+    }
     setCurrentChat((prev) => {
       const isNewChat = chat.chatId !== undefined && chat.chatId !== prev.chatId;
       const cached = isNewChat && chat.chatId ? cacheRef.current.get(chat.chatId) : undefined;
@@ -309,21 +335,15 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
           contact: null,
           group: null,
           messages: cached?.messages ?? [],
-          hasMoreMessages: cached?.hasMore ?? false,
+          hasMoreMessages: cached?.hasOlder ?? false,
+          hasNewerMessages: cached?.hasNewer ?? false,
           isLoading: !cached?.initialized,
           error: null,
         } : {}),
         ...chat,
       };
     });
-    if (chat.chatId && chat.unreadCount) {
-      void markBackendChatRead(chat.chatId, readReceiptsEnabled).catch((error) => {
-        setCurrentChat((current) => current.chatId === chat.chatId
-          ? { ...current, error: error instanceof Error ? error.message : "Failed to mark chat read" }
-          : current);
-      });
-    }
-  }, [readReceiptsEnabled]);
+  }, []);
 
   const loadOlderMessages = useCallback(async () => {
     const chatId = currentChatRef.current.chatId;
@@ -333,6 +353,17 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       if (olderRequestRef.current?.promise === promise) olderRequestRef.current = null;
     });
     olderRequestRef.current = { chatId, promise };
+    await promise;
+  }, [requestPage]);
+
+  const loadNewerMessages = useCallback(async () => {
+    const chatId = currentChatRef.current.chatId;
+    if (!chatId) return;
+    if (newerRequestRef.current?.chatId === chatId) return newerRequestRef.current.promise;
+    const promise = requestPage(chatId, "newer").finally(() => {
+      if (newerRequestRef.current?.promise === promise) newerRequestRef.current = null;
+    });
+    newerRequestRef.current = { chatId, promise };
     await promise;
   }, [requestPage]);
 
@@ -359,7 +390,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     cacheRef.current.set(chatId, cached
       ? { ...cached, messages: mergeMessages(cached.messages, [optimisticMessage]) }
       : {
-          messages: [optimisticMessage], nextCursor: null, latestCursor: null, hasMore: false, initialized: false,
+          messages: [optimisticMessage], olderCursor: null, newerCursor: null, latestCursor: null,
+          hasOlder: false, hasNewer: false, initialized: false,
         });
     setCurrentChat((prev) => prev.chatId === chatId
       ? { ...prev, messages: mergeMessages(prev.messages, [optimisticMessage]), error: null }
@@ -405,8 +437,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo(
-    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages }),
-    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages]
+    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages, loadNewerMessages }),
+    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages, loadNewerMessages]
   );
 
   return (
