@@ -12,8 +12,9 @@ import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
 import { getDisplayNameFromJid, isPhonePlaceholder, normalizeJid } from "../utils";
-import { BackendMessage, listBackendMessages, sendBackendMessage } from "../backend";
+import { BackendMessage, listBackendMessages, markBackendChatRead, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
+import { useProfile } from "../hooks/use-profile";
 
 export type CurrentChatContacts = {
   [contactId: string]: Contact | undefined;
@@ -43,6 +44,7 @@ export type CurrentChat = CurrentChatData & {
   sendMessage: (text: string) => boolean;
   loadOlderMessages: () => Promise<void>;
   loadNewerMessages: () => Promise<void>;
+  markMessagesRead: (messageIds: string[]) => void;
 };
 
 export const CurrentChatContext = createContext<undefined | CurrentChat>(
@@ -138,13 +140,17 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   });
   const {
     chats: { complete },
+    setChatUnreadCount,
   } = useChats();
   const { contacts, getContact } = useContacts();
+  const { profile: { readReceiptsEnabled } } = useProfile();
   const pollingActive = useChatPollingActive();
   const cacheRef = useRef(new Map<string, CachedMessages>());
   const requestRef = useRef<ActiveRequest | null>(null);
   const olderRequestRef = useRef<{ chatId: string; promise: Promise<void> } | null>(null);
   const newerRequestRef = useRef<{ chatId: string; promise: Promise<void> } | null>(null);
+  const pendingReadIdsRef = useRef(new Set<string>());
+  const readRequestRef = useRef(Promise.resolve());
   const chatsRef = useRef(complete);
   const currentChatRef = useRef(currentChat);
   chatsRef.current = complete;
@@ -270,6 +276,9 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const chat = complete.find((chat: Chat) => chat.id === currentChat.chatId);
     if (chat) {
+      setCurrentChat((prev) => prev.chatId === chat.id && prev.unreadCount !== chat.unreadCount
+        ? { ...prev, unreadCount: chat.unreadCount }
+        : prev);
       if (typeof chat.contactId == "string") {
         const contactId = chat.contactId;
         const contact = contacts.find(
@@ -367,6 +376,42 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     await promise;
   }, [requestPage]);
 
+  const markMessagesRead = useCallback((messageIds: string[]) => {
+    const chatId = currentChatRef.current.chatId;
+    if (!chatId) return;
+    const unreadIds = messageIds.filter((id) => {
+      const message = currentChatRef.current.messages.find((item) => item.id === id);
+      return message && !message.isSentFromUser && !message.read && !pendingReadIdsRef.current.has(id);
+    });
+    if (unreadIds.length === 0) return;
+    unreadIds.forEach((id) => pendingReadIdsRef.current.add(id));
+
+    const request = async () => {
+      try {
+        const { unreadCount } = await markBackendChatRead(chatId, readReceiptsEnabled, unreadIds);
+        const markRead = (messages: Message[]) => messages.map((message) =>
+          unreadIds.includes(message.id) ? { ...message, read: true } : message);
+        const cached = cacheRef.current.get(chatId);
+        if (cached) cacheRef.current.set(chatId, { ...cached, messages: markRead(cached.messages) });
+        setCurrentChat((prev) => prev.chatId === chatId ? {
+          ...prev,
+          messages: markRead(prev.messages),
+          unreadCount,
+          error: null,
+        } : prev);
+        setChatUnreadCount(chatId, unreadCount);
+      } catch (error) {
+        setCurrentChat((prev) => prev.chatId === chatId ? {
+          ...prev,
+          error: error instanceof Error ? error.message : "Failed to mark message read",
+        } : prev);
+      } finally {
+        unreadIds.forEach((id) => pendingReadIdsRef.current.delete(id));
+      }
+    };
+    readRequestRef.current = readRequestRef.current.then(request, request);
+  }, [readReceiptsEnabled, setChatUnreadCount]);
+
   const sendMessage = useCallback((text: string) => {
     const trimmedText = text.trim();
     const chatId = currentChatRef.current.chatId;
@@ -437,8 +482,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo(
-    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages, loadNewerMessages }),
-    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages, loadNewerMessages]
+    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages, loadNewerMessages, markMessagesRead }),
+    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages, loadNewerMessages, markMessagesRead]
   );
 
   return (

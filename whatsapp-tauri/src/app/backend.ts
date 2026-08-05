@@ -95,9 +95,9 @@ export const sendBackendMessage = (chatId: string, text: string) =>
     body: JSON.stringify({ text }),
   });
 
-export const markBackendChatRead = (chatId: string, sendReceipt: boolean) =>
-  request<void>(`/api/chats/${chatId}/read`, {
+export const markBackendChatRead = (chatId: string, sendReceipt: boolean, messageIds: string[]) =>
+  request<{ unreadCount: number }>(`/api/chats/${chatId}/read`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sendReceipt }),
+    body: JSON.stringify({ sendReceipt, messageIds }),
   });

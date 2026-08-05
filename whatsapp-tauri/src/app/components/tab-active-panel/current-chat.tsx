@@ -1,4 +1,4 @@
-import { FormEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, memo, ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon } from "@phosphor-icons/react";
 import dayjs from "dayjs";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
@@ -120,6 +120,33 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
+const VisibleUnreadMessage = memo(function VisibleUnreadMessage({
+  messageId,
+  enabled,
+  onVisible,
+  children,
+}: {
+  messageId: string;
+  enabled: boolean;
+  onVisible: (messageIds: string[]) => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!enabled || !ref.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        onVisible([messageId]);
+      }
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [enabled, messageId, onVisible]);
+
+  return <div ref={ref}>{children}</div>;
+});
+
 const MessageList = memo(function MessageList({
   chatId,
   messages,
@@ -133,6 +160,7 @@ const MessageList = memo(function MessageList({
   loadOlderMessages,
   loadNewerMessages,
   unreadCount,
+  markMessagesRead,
   scrollToBottomRequest,
 }: {
   chatId: string;
@@ -147,19 +175,22 @@ const MessageList = memo(function MessageList({
   loadOlderMessages: () => Promise<void>;
   loadNewerMessages: () => Promise<void>;
   unreadCount: number;
+  markMessagesRead: (messageIds: string[]) => void;
   scrollToBottomRequest: number;
 }) {
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
   const [visibleTimestamp, setVisibleTimestamp] = useState<Message["timestamp"] | null>(null);
+  const [canMarkRead, setCanMarkRead] = useState(unreadCount === 0);
+  const [oldestUnreadId, setOldestUnreadId] = useState<string | null>(null);
   const messageIndexes = useMemo(
     () => new Map(messages.map((message, index) => [message.id, index])),
     [messages]
   );
   const previousMessages = useRef(messages);
   const committedFirstItemIndex = useRef(INITIAL_ITEM_INDEX);
-  const positionedAtUnread = useRef(false);
+  const positionedAtUnread = useRef(unreadCount === 0);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   let firstItemIndex = committedFirstItemIndex.current;
   const oldestUnreadIndex = messages.findIndex((message) => !message.isSentFromUser && !message.read);
@@ -185,11 +216,13 @@ const MessageList = memo(function MessageList({
   useLayoutEffect(() => {
     if (positionedAtUnread.current || unreadCount === 0 || messages.length === 0 || isLoading) return;
     positionedAtUnread.current = true;
+    setOldestUnreadId(messages[oldestUnreadIndex]?.id ?? null);
     virtuosoRef.current?.scrollToIndex({
       index: firstItemIndex + Math.max(0, oldestUnreadIndex),
       align: "center",
     });
-  }, [firstItemIndex, isLoading, messages.length, oldestUnreadIndex, unreadCount]);
+    setCanMarkRead(true);
+  }, [firstItemIndex, isLoading, messages, oldestUnreadIndex, unreadCount]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);
@@ -249,10 +282,15 @@ const MessageList = memo(function MessageList({
           const compact = next?.isSentFromUser === message.isSentFromUser &&
             next?.contactId === message.contactId && !endsDay;
           const contact = contacts?.[message.contactId];
-          const isOldestUnread = unreadCount > 0 && index === oldestUnreadIndex;
+          const isOldestUnread = message.id === oldestUnreadId;
+          const trackVisibility = canMarkRead && !message.isSentFromUser && !message.read;
 
           return (
-            <>
+            <VisibleUnreadMessage
+              messageId={message.id}
+              enabled={trackVisibility}
+              onVisible={markMessagesRead}
+            >
               {startsNewDay ? <DatePill timestamp={message.timestamp} /> : null}
               {isOldestUnread ? (
                 <div className="flex w-full items-center gap-2 px-4 py-3 text-[11px] font-medium text-[#00a884]">
@@ -273,7 +311,7 @@ const MessageList = memo(function MessageList({
                 reactionMenuOpen={activeReactionId === message.id}
                 onToggleReactionMenu={toggleReactionMenu}
               />
-            </>
+            </VisibleUnreadMessage>
           );
         }}
       />
@@ -606,6 +644,7 @@ export default function CurrentChat() {
     sendMessage,
     loadOlderMessages,
     loadNewerMessages,
+    markMessagesRead,
   } = useCurrentChat();
   const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
@@ -640,6 +679,7 @@ export default function CurrentChat() {
             loadOlderMessages={loadOlderMessages}
             loadNewerMessages={loadNewerMessages}
             unreadCount={unreadCount}
+            markMessagesRead={markMessagesRead}
             scrollToBottomRequest={scrollToBottomRequest}
           />
           {cannotSend ? (

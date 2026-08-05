@@ -69,6 +69,7 @@ export const ChatsContext = createContext<
       search: string;
       updateSearch: (query: string) => void;
       setChatArchived: (chatId: string, archived: boolean) => void;
+      setChatUnreadCount: (chatId: string, unreadCount: number) => void;
       chats: Chats;
     }
 >(undefined);
@@ -188,6 +189,15 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
     }));
   }, []);
 
+  const setChatUnreadCount = useCallback((chatId: string, unreadCount: number) => {
+    setChatState((prev) => ({
+      ...prev,
+      complete: prev.complete.map((chat) => chat.id === chatId
+        ? { ...chat, unreadCount, read: unreadCount === 0 }
+        : chat),
+    }));
+  }, []);
+
   useEffect(() => {
     if (!pollingActive) return;
     const controller = new AbortController();
@@ -239,8 +249,8 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   }), [filter, chatState.complete]);
   const chats = useMemo(() => ({ ...chatState, filtered }), [chatState, filtered]);
   const value = useMemo(
-    () => ({ chats, filter, search, updateFilter, updateSearch, setChatArchived }),
-    [chats, filter, search, updateFilter, updateSearch, setChatArchived]
+    () => ({ chats, filter, search, updateFilter, updateSearch, setChatArchived, setChatUnreadCount }),
+    [chats, filter, search, updateFilter, updateSearch, setChatArchived, setChatUnreadCount]
   );
 
   return (
