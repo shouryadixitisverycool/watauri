@@ -40,5 +40,5 @@ export const getMentionParts = (text: string, names: Record<string, string>) =>
     const id = text.match(/^@(\+?\d+)$/)?.[1];
     if (!id) return { text };
     const name = names[id] ?? names[id.replace(/^\+/, "")];
-    return { text: name ? `@${name}` : text, id: id.replace(/^\+/, ""), name };
+    return { text: name ?? text.slice(1), id: id.replace(/^\+/, ""), name };
   });
