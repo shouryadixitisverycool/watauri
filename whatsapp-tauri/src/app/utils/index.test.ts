@@ -5,7 +5,7 @@ import { getMentionNames, getMentionParts } from "./index.ts";
 test("formats phone and LID mentions using participant names", () => {
   const names = getMentionNames([{
     id: "15551234567@s.whatsapp.net",
-    name: "Avi",
+    pushName: "Avi",
     phoneJid: "15551234567@s.whatsapp.net",
     lidJid: "20538651095165@lid",
   }]);

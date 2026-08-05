@@ -22,16 +22,17 @@ export const getDisplayNameFromJid = (jid: string) => {
 type MentionableUser = {
   id: string;
   name?: string;
+  pushName?: string;
   phoneNumber?: string;
   phoneJid?: string;
   lidJid?: string;
 };
 
 export const getMentionNames = (users: MentionableUser[]) => Object.fromEntries(
-  users.flatMap((user) => user.name
+  users.flatMap((user) => user.name || user.pushName
     ? [user.id, user.phoneNumber, user.phoneJid, user.lidJid]
         .filter((id): id is string => Boolean(id))
-        .map((id) => [getDisplayNameFromJid(id), user.name!])
+        .map((id) => [getDisplayNameFromJid(id), user.name || user.pushName!])
     : [])
 );
 
