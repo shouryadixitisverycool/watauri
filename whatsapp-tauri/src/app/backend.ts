@@ -5,6 +5,9 @@ export type BackendUser = {
   name?: string;
   avatar?: string;
   status?: string;
+  phoneNumber?: string;
+  phoneJid?: string;
+  lidJid?: string;
 };
 
 export type BackendProfile = {

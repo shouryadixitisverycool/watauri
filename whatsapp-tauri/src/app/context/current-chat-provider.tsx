@@ -11,7 +11,7 @@ import { Chat, Message } from "./chats-provider";
 import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
-import { getDisplayNameFromJid } from "../utils";
+import { formatMentions, getDisplayNameFromJid } from "../utils";
 import { BackendMessage, listBackendMessages, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 
@@ -47,12 +47,16 @@ export const CurrentChatContext = createContext<undefined | CurrentChat>(
   undefined
 );
 
-function toMessage(message: BackendMessage, fallbackContactId: string): Message {
+function toMessage(
+  message: BackendMessage,
+  fallbackContactId: string,
+  mentionNames: Record<string, string> = {}
+): Message {
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
     contactId: isFromMe ? fallbackContactId : message.senderId,
-    message: message.text,
+    message: formatMentions(message.text, mentionNames),
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
     sent: message.status !== "pending",
@@ -170,7 +174,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
 
       const chat = chatsRef.current.find((item: Chat) => item.id === chatId);
       const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : chatId;
-      const incoming = page.messages.map((message) => toMessage(message, fallbackContactId));
+      const incoming = page.messages.map((message) =>
+        toMessage(message, fallbackContactId, chat?.mentionNames));
       const current = cacheRef.current.get(chatId);
       const candidate: CachedMessages = direction === "initial" || !current
         ? {
@@ -342,7 +347,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       : prev);
 
     void sendBackendMessage(chatId, trimmedText).then((sentMessage) => {
-      const message = toMessage(sentMessage, fallbackContactId);
+      const message = toMessage(sentMessage, fallbackContactId, chat?.mentionNames);
       const replaceOptimistic = (messages: Message[]) => {
         const withoutOptimistic = messages.filter(({ id }) => id !== optimisticId);
         return withoutOptimistic.some(({ id }) => id === message.id)

@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { BackendChat, BackendMessage, listBackendChats } from "../backend";
-import { getDisplayNameFromJid } from "../utils";
+import { formatMentions, getDisplayNameFromJid, getMentionNames } from "../utils";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 
 export enum Filters {
@@ -46,6 +46,7 @@ export type Chat = {
   read: boolean;
   group: boolean;
   favorite: boolean;
+  mentionNames: Record<string, string>;
   messages: Message[];
 };
 
@@ -71,12 +72,16 @@ function getDirectContactId(chat: BackendChat) {
   return chat.participants?.find((participant) => participant.id !== "me")?.id ?? chat.id;
 }
 
-function toMessage(message: BackendMessage, fallbackContactId: string): Message {
+function toMessage(
+  message: BackendMessage,
+  fallbackContactId: string,
+  mentionNames: Record<string, string>
+): Message {
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
     contactId: isFromMe ? fallbackContactId : message.senderId,
-    message: message.text,
+    message: formatMentions(message.text, mentionNames),
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
     sent: message.status !== "pending",
@@ -100,7 +105,9 @@ function sameChat(a: Chat, b: Chat) {
     ? a.contactId === b.contactId
     : Array.isArray(b.contactId) && a.contactId.length === b.contactId.length &&
       a.contactId.every((id, index) => id === b.contactId[index]);
-  return a.id === b.id && contactsEqual && a.groupName === b.groupName &&
+  const mentionNamesEqual = Object.keys(a.mentionNames).length === Object.keys(b.mentionNames).length &&
+    Object.entries(a.mentionNames).every(([id, name]) => b.mentionNames[id] === name);
+  return a.id === b.id && contactsEqual && mentionNamesEqual && a.groupName === b.groupName &&
     a.groupAvatar === b.groupAvatar && a.unreadCount === b.unreadCount &&
     a.read === b.read && a.group === b.group &&
     a.favorite === b.favorite && a.messages.length === b.messages.length &&
@@ -121,6 +128,7 @@ export function mergeChats(previous: Chat[], incoming: Chat[]) {
 function toChat(chat: BackendChat): Chat {
   const directContactId = getDirectContactId(chat);
   const participants = chat.participants ?? [];
+  const mentionNames = getMentionNames(participants);
   const contactId = chat.isGroup
     ? participants.map((participant) => participant.id)
     : directContactId;
@@ -134,8 +142,9 @@ function toChat(chat: BackendChat): Chat {
     read: chat.unreadCount === 0,
     group: chat.isGroup,
     favorite: Boolean(chat.isStarred),
+    mentionNames,
     messages: chat.lastMessage
-      ? [toMessage(chat.lastMessage, chat.isGroup ? "me" : directContactId)]
+      ? [toMessage(chat.lastMessage, chat.isGroup ? "me" : directContactId, mentionNames)]
       : [],
   };
 }
