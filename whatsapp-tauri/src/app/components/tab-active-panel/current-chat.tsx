@@ -5,6 +5,7 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
 import { CurrentChatContacts } from "@/app/context/current-chat-provider";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
+import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
 import { getDisplayNameFromJid } from "@/app/utils";
 import Reaction from "../message/reaction";
@@ -55,6 +56,9 @@ type MessageRowProps = {
   compact: boolean;
   isLast: boolean;
   blueTickEnabled: boolean;
+  mentionNames: Record<string, string>;
+  currentUserId: string;
+  currentUserName: string;
   reactionMenuOpen: boolean;
   onToggleReactionMenu: (messageId: string) => void;
 };
@@ -68,6 +72,9 @@ const MessageRow = memo(function MessageRow({
   compact,
   isLast,
   blueTickEnabled,
+  mentionNames,
+  currentUserId,
+  currentUserName,
   reactionMenuOpen,
   onToggleReactionMenu,
 }: MessageRowProps) {
@@ -99,6 +106,9 @@ const MessageRow = memo(function MessageRow({
           senderAvatar={senderAvatar}
           showSender={showSender}
           blueTickEnabled={blueTickEnabled}
+          mentionNames={mentionNames}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
         />
         {!message.isSentFromUser ? (
           <Reaction
@@ -125,6 +135,9 @@ const MessageList = memo(function MessageList({
   contacts,
   isGroup,
   blueTickEnabled,
+  mentionNames,
+  currentUserId,
+  currentUserName,
   isLoading,
   error,
   hasMoreMessages,
@@ -137,6 +150,9 @@ const MessageList = memo(function MessageList({
   contacts?: CurrentChatContacts;
   isGroup: boolean;
   blueTickEnabled: boolean;
+  mentionNames: Record<string, string>;
+  currentUserId: string;
+  currentUserName: string;
   isLoading: boolean;
   error: string | null;
   hasMoreMessages: boolean;
@@ -269,6 +285,9 @@ const MessageList = memo(function MessageList({
                 compact={compact}
                 isLast={index === messages.length - 1}
                 blueTickEnabled={blueTickEnabled}
+                mentionNames={mentionNames}
+                currentUserId={currentUserId}
+                currentUserName={currentUserName}
                 reactionMenuOpen={activeReactionId === message.id}
                 onToggleReactionMenu={toggleReactionMenu}
               />
@@ -609,7 +628,8 @@ export default function CurrentChat() {
     sendMessage,
     loadOlderMessages,
   } = useCurrentChat();
-  const { profile: { blueTickEnabled, id: userId } } = useProfile();
+  const { profile: { blueTickEnabled, id: userId, name: userName } } = useProfile();
+  const mentionNames = useChats().chats.complete.find((chat) => chat.id === chatId)?.mentionNames ?? {};
   if (!chatId) {
     return (
       <section className="flex h-full w-full items-center justify-center text-white">
@@ -633,6 +653,9 @@ export default function CurrentChat() {
             contacts={group?.contacts}
             isGroup={Boolean(group)}
             blueTickEnabled={blueTickEnabled}
+            mentionNames={mentionNames}
+            currentUserId={userId}
+            currentUserName={userName}
             isLoading={isLoading}
             error={error}
             hasMoreMessages={hasMoreMessages}

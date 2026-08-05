@@ -1,5 +1,5 @@
 import { Message } from "@/app/context/chats-provider";
-import { formatTime } from "@/app/utils";
+import { formatTime, getDisplayNameFromJid, getMentionParts } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
 import Profile from "../profile";
 
@@ -24,6 +24,9 @@ export default function ChatMessage({
   senderAvatar,
   showSender,
   blueTickEnabled,
+  mentionNames,
+  currentUserId,
+  currentUserName,
 }: {
   message: Message;
   isGroup: boolean;
@@ -31,7 +34,11 @@ export default function ChatMessage({
   senderAvatar?: string;
   showSender: boolean;
   blueTickEnabled: boolean;
+  mentionNames: Record<string, string>;
+  currentUserId: string;
+  currentUserName: string;
 }) {
+  const currentUserMentionId = getDisplayNameFromJid(currentUserId).replace(/^\+/, "");
   const bubble = (
     <div
       className={`min-w-0 rounded-lg px-2 py-1.5 ${
@@ -45,7 +52,20 @@ export default function ChatMessage({
       ) : null}
       <div className="flex min-w-0 max-w-full items-end justify-between gap-2">
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
-          {message.message}
+          {getMentionParts(message.message, mentionNames).map((part, index) => {
+            if (!part.id) return part.text;
+            const isCurrentUser = part.id === currentUserMentionId || part.name === currentUserName;
+            return (
+              <span
+                key={`${part.id}-${index}`}
+                className={isCurrentUser
+                  ? "rounded border border-[#00a884] bg-[#00a884]/10 px-1 py-0.5 font-semibold text-white"
+                  : "font-medium text-[#00a884]"}
+              >
+                {part.text}
+              </span>
+            );
+          })}
         </p>
         <p className="shrink-0 text-xs text-white/80">{formatTime(message.timestamp)}</p>
         <MessageStatusIcon

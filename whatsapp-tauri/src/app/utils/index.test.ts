@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatMentions, getMentionNames } from "./index.ts";
+import { getMentionNames, getMentionParts } from "./index.ts";
 
 test("formats phone and LID mentions using participant names", () => {
   const names = getMentionNames([{
@@ -10,6 +10,13 @@ test("formats phone and LID mentions using participant names", () => {
     lidJid: "20538651095165@lid",
   }]);
 
-  assert.equal(formatMentions("@20538651095165 where are y'all", names), "@Avi where are y'all");
-  assert.equal(formatMentions("keep @999 unchanged", names), "keep @999 unchanged");
+  assert.deepEqual(getMentionParts("@20538651095165 where are y'all", names), [
+    { text: "@Avi", id: "20538651095165", name: "Avi" },
+    { text: " where are y'all" },
+  ]);
+  assert.deepEqual(getMentionParts("keep @+919876543210 unchanged", names), [
+    { text: "keep " },
+    { text: "@+919876543210", id: "919876543210", name: undefined },
+    { text: " unchanged" },
+  ]);
 });

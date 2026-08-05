@@ -35,5 +35,10 @@ export const getMentionNames = (users: MentionableUser[]) => Object.fromEntries(
     : [])
 );
 
-export const formatMentions = (text: string, names: Record<string, string>) =>
-  text.replace(/@(\d+)/g, (mention, id) => names[id] ? `@${names[id]}` : mention);
+export const getMentionParts = (text: string, names: Record<string, string>) =>
+  text.split(/(@\+?\d+)/g).filter(Boolean).map((text) => {
+    const id = text.match(/^@(\+?\d+)$/)?.[1];
+    if (!id) return { text };
+    const name = names[id] ?? names[id.replace(/^\+/, "")];
+    return { text: name ? `@${name}` : text, id: id.replace(/^\+/, ""), name };
+  });

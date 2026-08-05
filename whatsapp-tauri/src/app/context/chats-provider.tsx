@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { BackendChat, BackendMessage, listBackendChats } from "../backend";
-import { formatMentions, getDisplayNameFromJid, getMentionNames } from "../utils";
+import { getDisplayNameFromJid, getMentionNames } from "../utils";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 
 export enum Filters {
@@ -74,14 +74,13 @@ function getDirectContactId(chat: BackendChat) {
 
 function toMessage(
   message: BackendMessage,
-  fallbackContactId: string,
-  mentionNames: Record<string, string>
+  fallbackContactId: string
 ): Message {
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
     contactId: isFromMe ? fallbackContactId : message.senderId,
-    message: formatMentions(message.text, mentionNames),
+    message: message.text,
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
     sent: message.status !== "pending",
@@ -144,7 +143,7 @@ function toChat(chat: BackendChat): Chat {
     favorite: Boolean(chat.isStarred),
     mentionNames,
     messages: chat.lastMessage
-      ? [toMessage(chat.lastMessage, chat.isGroup ? "me" : directContactId, mentionNames)]
+      ? [toMessage(chat.lastMessage, chat.isGroup ? "me" : directContactId)]
       : [],
   };
 }
