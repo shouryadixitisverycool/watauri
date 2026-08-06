@@ -180,9 +180,13 @@ const MessageList = memo(function MessageList({
 }) {
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [userReachedBottom, setUserReachedBottom] = useState(false);
+  const followOutput = userReachedBottom
+    ? (isAtBottom: boolean) => (isAtBottom ? "auto" : false)
+    : false;
   const [isScrolling, setIsScrolling] = useState(false);
   const [visibleTimestamp, setVisibleTimestamp] = useState<Message["timestamp"] | null>(null);
-  const [canMarkRead, setCanMarkRead] = useState(unreadCount === 0);
+  const [canMarkRead, setCanMarkRead] = useState(false);
   const [oldestUnreadId, setOldestUnreadId] = useState<string | null>(null);
   const messageIndexes = useMemo(
     () => new Map(messages.map((message, index) => [message.id, index])),
@@ -190,11 +194,22 @@ const MessageList = memo(function MessageList({
   );
   const previousMessages = useRef(messages);
   const committedFirstItemIndex = useRef(INITIAL_ITEM_INDEX);
-  const positionedAtUnread = useRef(unreadCount === 0);
+  const positionedAtUnread = useRef(false);
+  const unreadAnchorIndex = useRef<number | null>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   let firstItemIndex = committedFirstItemIndex.current;
   const oldestUnreadIndex = messages.findIndex((message) => !message.isSentFromUser && !message.read);
 
+  if (unreadAnchorIndex.current === null && messages.length > 0 &&
+      oldestUnreadIndex >= 0 && oldestUnreadIndex < messages.length - 1) {
+    unreadAnchorIndex.current = oldestUnreadIndex;
+  }
+  const unreadAnchorPosition = unreadAnchorIndex.current === null
+    ? null
+    : { index: unreadAnchorIndex.current, align: "center" as const };
+  const initialTopMostItemIndex = unreadAnchorPosition === null
+    ? Math.max(0, messages.length - 1)
+    : undefined;
   if (previousMessages.current !== messages && previousMessages.current[0]) {
     const previousFirstIndex = messages.findIndex(
       (message) => message.id === previousMessages.current[0].id
@@ -214,15 +229,19 @@ const MessageList = memo(function MessageList({
   }, [scrollToBottomRequest]);
 
   useLayoutEffect(() => {
-    if (positionedAtUnread.current || unreadCount === 0 || messages.length === 0 || isLoading) return;
+    if (positionedAtUnread.current || messages.length === 0 || isLoading || oldestUnreadIndex < 0) return;
     positionedAtUnread.current = true;
     setOldestUnreadId(messages[oldestUnreadIndex]?.id ?? null);
-    virtuosoRef.current?.scrollToIndex({
-      index: firstItemIndex + Math.max(0, oldestUnreadIndex),
-      align: "center",
-    });
     setCanMarkRead(true);
-  }, [firstItemIndex, isLoading, messages, oldestUnreadIndex, unreadCount]);
+    const anchor = unreadAnchorIndex.current;
+    if (anchor !== null) {
+      // ponytail: retry until item sizes are measured; Virtuoso needs sizes to compute the scroll offset
+      const timers = [0, 50, 150, 350].map((delay) => setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({ index: anchor, align: "center" });
+      }, delay));
+      return () => { timers.forEach(clearTimeout); };
+    }
+  }, [firstItemIndex, isLoading, messages, oldestUnreadIndex]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);
@@ -254,10 +273,13 @@ const MessageList = memo(function MessageList({
         className="h-full w-full"
         data={messages}
         firstItemIndex={firstItemIndex}
-        initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-        alignToBottom
-        followOutput={(isAtBottom) => isAtBottom ? "auto" : false}
-        atBottomStateChange={setIsAtBottom}
+        initialTopMostItemIndex={initialTopMostItemIndex}
+        alignToBottom={oldestUnreadIndex < 0}
+        followOutput={followOutput}
+        atBottomStateChange={(isAtBottom) => {
+          setIsAtBottom(isAtBottom);
+          if (isAtBottom) setUserReachedBottom(true);
+        }}
         increaseViewportBy={{ top: 0, bottom: 200 }}
         computeItemKey={(_index, message) => message.id}
         isScrolling={setIsScrolling}
