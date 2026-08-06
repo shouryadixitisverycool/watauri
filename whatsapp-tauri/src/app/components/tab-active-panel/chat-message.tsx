@@ -56,7 +56,7 @@ export default function ChatMessage({
               <span
                 key={`${part.id}-${index}`}
                 className={isCurrentUser
-                  ? "rounded border border-[#00a884] bg-[#00a884]/10 px-1 py-0.5 font-bold text-white"
+                  ? "rounded border border-[#00a884] bg-[#00a884]/10 px-1 py-0.5 font-bold text-[#dcfce7]"
                   : "font-bold text-[#00a884]"}
               >
                 {part.text}
