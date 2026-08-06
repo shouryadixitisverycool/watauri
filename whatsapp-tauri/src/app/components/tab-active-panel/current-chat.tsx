@@ -81,9 +81,9 @@ const MessageRow = memo(function MessageRow({
       } px-4 ${isLast ? "pb-0" : compact && !hasReactions ? "pb-0.5" : "pb-4"}`}
     >
       <div
-        className={`relative flex min-w-0 items-center gap-2 ${
-          isGroup ? "w-[60%]" : "max-w-full"
-        } ${message.isSentFromUser ? "justify-end" : "justify-start"}`}
+        className={`relative flex min-w-0 max-w-[60%] items-center gap-2 ${
+          message.isSentFromUser ? "justify-end" : "justify-start"
+        }`}
       >
         {message.isSentFromUser ? (
           <Reaction
