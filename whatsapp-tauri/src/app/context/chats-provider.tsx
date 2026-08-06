@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { BackendChat, BackendMessage, listBackendChats } from "../backend";
-import { getDisplayNameFromJid, getMentionNames } from "../utils";
+import { getDisplayNameFromJid, getMentionAliases, getMentionNames } from "../utils";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 
 export enum Filters {
@@ -47,6 +47,7 @@ export type Chat = {
   group: boolean;
   favorite: boolean;
   mentionNames: Record<string, string>;
+  mentionAliases: Record<string, string[]>;
   messages: Message[];
 };
 
@@ -106,7 +107,11 @@ function sameChat(a: Chat, b: Chat) {
       a.contactId.every((id, index) => id === b.contactId[index]);
   const mentionNamesEqual = Object.keys(a.mentionNames).length === Object.keys(b.mentionNames).length &&
     Object.entries(a.mentionNames).every(([id, name]) => b.mentionNames[id] === name);
-  return a.id === b.id && contactsEqual && mentionNamesEqual && a.groupName === b.groupName &&
+  const mentionAliasesEqual = Object.keys(a.mentionAliases).length === Object.keys(b.mentionAliases).length &&
+    Object.entries(a.mentionAliases).every(([id, aliases]) =>
+      aliases.join() === b.mentionAliases[id]?.join());
+  return a.id === b.id && contactsEqual && mentionNamesEqual && mentionAliasesEqual &&
+    a.groupName === b.groupName &&
     a.groupAvatar === b.groupAvatar && a.unreadCount === b.unreadCount &&
     a.read === b.read && a.group === b.group &&
     a.favorite === b.favorite && a.messages.length === b.messages.length &&
@@ -142,6 +147,7 @@ function toChat(chat: BackendChat): Chat {
     group: chat.isGroup,
     favorite: Boolean(chat.isStarred),
     mentionNames,
+    mentionAliases: getMentionAliases(participants),
     messages: chat.lastMessage
       ? [toMessage(chat.lastMessage, chat.isGroup ? "me" : directContactId)]
       : [],

@@ -7,7 +7,7 @@ import { CurrentChatContacts } from "@/app/context/current-chat-provider";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
-import { getDisplayNameFromJid } from "@/app/utils";
+import { getDisplayNameFromJid, getSelfMentionIds } from "@/app/utils";
 import Reaction from "../message/reaction";
 import ChatInfoPanel from "./chat-info-panel";
 import ContactHeader from "./contact-header";
@@ -57,8 +57,7 @@ type MessageRowProps = {
   isLast: boolean;
   blueTickEnabled: boolean;
   mentionNames: Record<string, string>;
-  currentUserId: string;
-  currentUserName: string;
+  selfMentionIds: string[];
   reactionMenuOpen: boolean;
   onToggleReactionMenu: (messageId: string) => void;
 };
@@ -73,8 +72,7 @@ const MessageRow = memo(function MessageRow({
   isLast,
   blueTickEnabled,
   mentionNames,
-  currentUserId,
-  currentUserName,
+  selfMentionIds,
   reactionMenuOpen,
   onToggleReactionMenu,
 }: MessageRowProps) {
@@ -107,8 +105,7 @@ const MessageRow = memo(function MessageRow({
           showSender={showSender}
           blueTickEnabled={blueTickEnabled}
           mentionNames={mentionNames}
-          currentUserId={currentUserId}
-          currentUserName={currentUserName}
+          selfMentionIds={selfMentionIds}
         />
         {!message.isSentFromUser ? (
           <Reaction
@@ -136,8 +133,7 @@ const MessageList = memo(function MessageList({
   isGroup,
   blueTickEnabled,
   mentionNames,
-  currentUserId,
-  currentUserName,
+  selfMentionIds,
   isLoading,
   error,
   hasMoreMessages,
@@ -151,8 +147,7 @@ const MessageList = memo(function MessageList({
   isGroup: boolean;
   blueTickEnabled: boolean;
   mentionNames: Record<string, string>;
-  currentUserId: string;
-  currentUserName: string;
+  selfMentionIds: string[];
   isLoading: boolean;
   error: string | null;
   hasMoreMessages: boolean;
@@ -286,8 +281,7 @@ const MessageList = memo(function MessageList({
                 isLast={index === messages.length - 1}
                 blueTickEnabled={blueTickEnabled}
                 mentionNames={mentionNames}
-                currentUserId={currentUserId}
-                currentUserName={currentUserName}
+                selfMentionIds={selfMentionIds}
                 reactionMenuOpen={activeReactionId === message.id}
                 onToggleReactionMenu={toggleReactionMenu}
               />
@@ -628,8 +622,10 @@ export default function CurrentChat() {
     sendMessage,
     loadOlderMessages,
   } = useCurrentChat();
-  const { profile: { blueTickEnabled, id: userId, name: userName } } = useProfile();
-  const mentionNames = useChats().chats.complete.find((chat) => chat.id === chatId)?.mentionNames ?? {};
+  const { profile: { blueTickEnabled, id: userId } } = useProfile();
+  const chat = useChats().chats.complete.find((chat) => chat.id === chatId);
+  const mentionNames = chat?.mentionNames ?? {};
+  const selfMentionIds = getSelfMentionIds(chat?.mentionAliases ?? {}, userId);
   if (!chatId) {
     return (
       <section className="flex h-full w-full items-center justify-center text-white">
@@ -654,8 +650,7 @@ export default function CurrentChat() {
             isGroup={Boolean(group)}
             blueTickEnabled={blueTickEnabled}
             mentionNames={mentionNames}
-            currentUserId={userId}
-            currentUserName={userName}
+            selfMentionIds={selfMentionIds}
             isLoading={isLoading}
             error={error}
             hasMoreMessages={hasMoreMessages}

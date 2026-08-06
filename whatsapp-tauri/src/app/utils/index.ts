@@ -36,6 +36,24 @@ export const getMentionNames = (users: MentionableUser[]) => Object.fromEntries(
     : [])
 );
 
+const getMentionId = (jid: string) => getDisplayNameFromJid(jid).split(":")[0].replace(/^\+/, "");
+
+export const getMentionAliases = (users: MentionableUser[]) => Object.fromEntries(
+  users.flatMap((user) => {
+    const aliases = [user.id, user.phoneNumber, user.phoneJid, user.lidJid]
+      .filter((id): id is string => Boolean(id))
+      .map(getMentionId);
+    return aliases.map((id) => [id, aliases]);
+  })
+);
+
+export const getSelfMentionIds = (
+  aliases: Record<string, string[]>,
+  currentUserId: string
+) => Object.entries(aliases)
+  .filter(([, userAliases]) => userAliases.includes(getMentionId(currentUserId)))
+  .map(([id]) => id);
+
 export const getMentionParts = (text: string, names: Record<string, string>) =>
   text.split(/(@\+?\d+)/g).filter(Boolean).map((text) => {
     const id = text.match(/^@(\+?\d+)$/)?.[1];

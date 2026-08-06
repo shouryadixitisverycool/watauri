@@ -1,5 +1,5 @@
 import { Message } from "@/app/context/chats-provider";
-import { formatTime, getDisplayNameFromJid, getMentionParts } from "@/app/utils";
+import { formatTime, getMentionParts } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
 import Profile from "../profile";
 
@@ -25,8 +25,7 @@ export default function ChatMessage({
   showSender,
   blueTickEnabled,
   mentionNames,
-  currentUserId,
-  currentUserName,
+  selfMentionIds,
 }: {
   message: Message;
   isGroup: boolean;
@@ -35,10 +34,8 @@ export default function ChatMessage({
   showSender: boolean;
   blueTickEnabled: boolean;
   mentionNames: Record<string, string>;
-  currentUserId: string;
-  currentUserName: string;
+  selfMentionIds: string[];
 }) {
-  const currentUserMentionId = getDisplayNameFromJid(currentUserId).replace(/^\+/, "");
   const bubble = (
     <div
       className={`min-w-0 rounded-lg px-2 py-1.5 ${
@@ -54,7 +51,7 @@ export default function ChatMessage({
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
           {getMentionParts(message.message, mentionNames).map((part, index) => {
             if (!part.id) return part.text;
-            const isCurrentUser = part.id === currentUserMentionId || part.name === currentUserName;
+            const isCurrentUser = selfMentionIds.includes(part.id);
             return (
               <span
                 key={`${part.id}-${index}`}
